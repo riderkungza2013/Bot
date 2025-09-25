@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Slip Amount Summation</title>
+  <style>
+    body { font-family: system-ui, Segoe UI, Roboto, Arial; margin: 18px; background: #f7f6fb; color: #222; }
+    h1 { margin: 0 0 10px; font-size: 20px; }
+    .top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .drop { flex: 1; padding: 14px; border: 2px dashed #d6cfe0; border-radius: 8px; background: #fff; text-align: center; cursor: pointer; }
+    input[type=file] { display: none; }
+    button { background: #5b3ebc; color: #fff; padding: 8px 12px; border: none; border-radius: 8px; cursor: pointer; }
+    button.ghost { background: #777; }
+    #list { margin-top: 14px; display: grid; gap: 10px; }
+    .row { display: flex; gap: 10px; align-items: center; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .thumb { width: 140px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; }
+    .meta { flex: 1; }
+    .meta p { margin: 4px 0; }
+    .amount { width: 140px; padding: 6px; font-size: 16px; border-radius: 6px; border: 1px solid #ccc; }
+    #summary { margin-top: 12px; background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: 8px; border-bottom: 1px solid #f0f0f0; text-align: left; }
+    .small { font-size: 13px; color: #666; }
+    .prog { height: 8px; background: #eee; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+    .prog > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #5b3ebc, #9b6ce0); }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <h1>Slip Amount Summation</h1>
+  <div class="top">
+    <label class="drop" id="dropzone">Click or drag slip images here<br><span class="small">Supports multiple files (jpg, png)</span>
+      <input id="file" type="file" accept="image/*" multiple>
+    </label>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button id="scanBtn">Scan All (OCR)</button>
+      <div style="display:flex;gap:8px">
+        <button id="updateBtn" class="ghost">Update Total</button>
+        <button id="exportBtn" class="ghost">Export CSV</button>
+        <button id="clearBtn" class="ghost">Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="list"></div>
+
+  <div id="summary">
+    <table>
+      <tr><th>Number of Slips</th><td id="count">0</td></tr>
+      <tr><th>Total Amount (THB)</th><td id="total">0.00</td></tr>
+      <tr><th>Status</th><td id="stat">-</td></tr>
+    </table>
+    <div class="prog"><i id="bar"></i></div>
+    <p class="small">Note: OCR may misread — manually adjust amounts before clicking "Update Total"</p>
+  </div>
+
+<script>
+function thaiToArabic(s) {
+  const map = {'๐':'0','๑':'1','๒':'2','๓':'3','๔':'4','๕':'5','๖':'6','๗':'7','๘':'8','๙':'9'};
+  return s.replace(/[๐-๙]/g, m => map[m]);
+}
+
+function extractAmount(text) {
+  if (!text) return null;
+  text = text.replace(/\u00A0/g, ' ').trim();
+  text = thaiToArabic(text);
+  const lower = text.toLowerCase();
+  const keywords = ['จำนวนเงิน', 'จำนวน', 'ยอดรวม', 'รวมทั้งสิ้น', 'ยอดสุทธิ', 'total', 'amount', 'amount:', 'total:', 'รวม'];
+  for (const kw of keywords) {
+    const idx = lower.indexOf(kw);
+    if (idx !== -1) {
+      const slice = text.slice(idx, idx + 160);
+      const m = slice.match(/([0-9]{1,3}(?:[,][0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)/);
+      if (m) return parseFloat(m[0].replace(/,/g, '')) || null;
+    }
+  }
+  const all = Array.from(text.matchAll(/([0-9]{1,3}(?:[,][0-9]{3})*(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?)/g)).map(m => parseFloat(m[0].replace(/,/g, ''))).filter(n => !isNaN(n));
+  if (all.length === 0) return null;
+  return Math.max(...all);
+}
+
+let items = [];
+const listEl = document.getElementById('list');
+const fileInput = document.getElementById('file');
+const dropzone = document.getElementById('dropzone');
+const scanBtn = document.getElementById('scanBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exportBtn = document.getElementById('exportBtn');
+const updateBtn = document.getElementById('updateBtn');
+const countEl = document.getElementById('count');
+const totalEl = document.getElementById('total');
+const statEl = document.getElementById('stat');
+const bar = document.getElementById('bar');
+
+function render() {
+  listEl.innerHTML = '';
+  items.forEach((it, idx) => {
+    const r = document.createElement('div'); r.className = 'row';
+    const img = document.createElement('img'); img.className = 'thumb'; img.src = it.url;
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const name = document.createElement('p'); name.innerHTML = `<strong>${it.file.name}</strong> <span class="small">(${(it.ocr || '').slice(0, 80).replace(/\n/g, ' ')}${(it.ocr && it.ocr.length > 80 ? '...' : '')})</span>`;
+    const amountRow = document.createElement('p');
+    const inp = document.createElement('input'); inp.className = 'amount'; inp.value = (it.amount == null ? '' : Number(it.amount).toFixed(2));
+    inp.addEventListener('change', () => { it.amount = parseFloat(inp.value) || 0; updateSummary(); updateStatus(); });
+    inp.addEventListener('keyup', (e) => { if (e.key === 'Enter') { it.amount = parseFloat(inp.value) || 0; updateSummary(); updateStatus(); } });
+    const status = document.createElement('span'); status.className = 'small'; status.style.marginLeft = '8px';
+    status.textContent = (it.amount == null ? 'Not Read' : 'Read');
+    const re = document.createElement('button'); re.textContent = 'OCR Again'; re.style.marginLeft = '8px';
+    re.addEventListener('click', () => runOCR(idx));
+    const del = document.createElement('button'); del.textContent = 'Delete'; del.style.marginLeft = '8px';
+    del.addEventListener('click', () => { URL.revokeObjectURL(it.url); items.splice(idx, 1); render(); });
+    amountRow.appendChild(inp); amountRow.appendChild(status); amountRow.appendChild(re); amountRow.appendChild(del);
+    meta.appendChild(name); meta.appendChild(amountRow);
+    r.appendChild(img); r.appendChild(meta);
+    listEl.appendChild(r);
+  });
+  updateSummary();
+}
+
+function updateSummary() {
+  countEl.textContent = items.length;
+  let sum = 0; let parsed = 0;
+  items.forEach(it => { if (it.amount != null && !isNaN(it.amount)) { sum += Number(it.amount); parsed++; } });
+  totalEl.textContent = sum.toFixed(2);
+  statEl.textContent = `${parsed} Read / ${items.length - parsed} Not Read`;
+}
+
+fileInput.addEventListener('change', (e) => addFiles(Array.from(e.target.files)));
+['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.borderColor = '#9b6ce0'; }));
+['dragleave', 'drop', 'dragend'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.borderColor = ''; }));
+dropzone.addEventListener('drop', (e) => { e.preventDefault(); const fs = Array.from(e.dataTransfer.files || []); addFiles(fs); });
+dropzone.addEventListener('click', () => fileInput.click());
+
+function addFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue;
+    const url = URL.createObjectURL(f);
+    items.push({ file: f, url, ocr: null, amount: null });
+  }
+  render();
+}
+
+let worker = null;
+async function ensureWorker() {
+  if (worker) return;
+  worker = Tesseract.createWorker({
+    logger: m => {
+      if (m.status === 'recognizing text' && m.progress) setProgress(m.progress * 100);
+    }
+  });
+  await worker.load();
+  await worker.loadLanguage('eng+tha');
+  await worker.initialize('eng+tha');
+}
+function setProgress(p) { bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+
+async function runOCR(index) {
+  if (index < 0 || index >= items.length) return;
+  await ensureWorker();
+  try {
+    setProgress(0);
+    const it = items[index];
+    const res = await worker.recognize(it.url);
+    it.ocr = res.data.text || '';
+    const amt = extractAmount(it.ocr);
+    it.amount = (amt == null ? null : Number(amt));
+    render();
+  } catch (err) {
+    console.error(err);
+    alert('OCR Error: ' + err.message);
+  } finally {
+    setProgress(0);
+  }
+}
+
+async function runOCRAll() {
+  if (items.length === 0) { alert('No files available'); return; }
+  scanBtn.disabled = true; scanBtn.textContent = 'Scanning...';
+  await ensureWorker();
+  for (let i = 0; i < items.length; i++) {
+    await runOCR(i);
+  }
+  scanBtn.disabled = false; scanBtn.textContent = 'Scan All (OCR)';
+}
+
+scanBtn.addEventListener('click', runOCRAll);
+updateBtn.addEventListener('click', updateSummary);
+clearBtn.addEventListener('click', () => {
+  if (!confirm('Clear all items?')) return;
+  items.forEach(it => URL.revokeObjectURL(it.url));
+  items = []; render();
+});
+exportBtn.addEventListener('click', () => {
+  if (items.length === 0) return alert('No data to export');
+  let csv = 'filename,amount,ocr_excerpt\n';
+  items.forEach(it => {
+    const name = it.file.name.replace(/"/g, '""');
+    const amt = (it.amount == null ? '' : Number(it.amount).toFixed(2));
+    const excerpt = (it.ocr || '').replace(/\r?\n/g, ' ').slice(0, 200).replace(/"/g, '""');
+    csv += `"${name}","${amt}","${excerpt}"\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'slip_summary.csv'; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+window.addEventListener('beforeunload', async () => {
+  if (worker) try { await worker.terminate(); } catch (e) { }
+});
+</script>
+</body>
+</html>

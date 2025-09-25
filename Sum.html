@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Scan สลิป: เลือกกรอบ → OCR → รวมยอด</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans",
+          "Helvetica Neue", Arial;
+        margin: 18px;
+        background: #f7f7fb;
+        color: #111;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      /* ===== ส่วนเมนูบน ===== */
+      .topbar {
+        background: #fff;
+        padding: 12px 16px;
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .topbar .controls,
+      .topbar .input-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        align-items: center;
+      }
+      .topbar label {
+        font-size: 13px;
+        color: #333;
+      }
+      .topbar input[type="number"],
+      .topbar select {
+        padding: 4px 6px;
+        font-size: 13px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fafafa;
+        min-width: 60px;
+      }
+      input[type="file"] {
+        padding: 4px;
+        font-size: 13px;
+      }
+      button {
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.2s, box-shadow 0.2s;
+      }
+      button:hover {
+        background: #f2f2f2;
+      }
+      button.primary {
+        background: #4f46e5;
+        color: white;
+        border-color: transparent;
+      }
+
+      /* ===== ส่วนการ์ดและผลลัพธ์เดิม ===== */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .card {
+        background: white;
+        padding: 8px;
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      canvas {
+        width: 100%;
+        height: auto;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        display: block;
+        cursor: crosshair;
+      }
+
+      .meta {
+        margin-top: 6px;
+        font-size: 13px;
+        color: #555;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .actions button {
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+      .meta-file-name {
+        max-width: 160px; /* กำหนดความกว้างสูงสุดตามต้องการ */
+        overflow: hidden; /* ซ่อนส่วนที่เกิน */
+        text-overflow: ellipsis; /* แสดง ... ต่อท้าย */
+        white-space: nowrap; /* บังคับให้ไม่ตัดบรรทัด */
+        display: inline-block;
+        vertical-align: bottom;
+      }
+
+      .results {
+        margin-top: 16px;
+        background: #fff;
+        padding: 12px;
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      }
+      .list {
+        max-height: 220px;
+        overflow: auto;
+        margin-top: 8px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px dashed #eee;
+      }
+      .hint {
+        font-size: 13px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>สแกนตัวเลขจากสลิป (ลากกรอบในรูป → OCR → รวมยอด)</h1>
+
+    <!-- ✅ เมนูด้านบนจัดใหม่ -->
+    <div class="topbar">
+      <div class="controls">
+        <input id="inputFiles" type="file" accept="image/*" multiple />
+        <button id="btnSuggested">ใช้ตำแหน่งแนะนำ (กำหนดเอง)</button>
+        <button id="btnScanAll" class="primary">สแกนทั้งหมด (OCR)</button>
+        <button id="btnClear">เริ่มใหม่</button>
+        <button id="toggleDrag">ปิดการลาก</button>
+      </div>
+
+      <div class="input-group">
+        <label for="bankSelect">เลือกธนาคาร:</label>
+        <select id="bankSelect">
+          <option value="">-- เลือก --</option>
+          <option value="SCB">SCB</option>
+          <option value="Krungthai">Krungthai</option>
+          <option value="Bangkok">Bangkok</option>
+          <option value="TTB">TTB</option>
+        </select>
+
+        <label for="inputRx">x-start (rx):</label>
+        <input
+          type="number"
+          id="inputRx"
+          value="0.65"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label for="inputRy">y-start (ry):</label>
+        <input
+          type="number"
+          id="inputRy"
+          value="0.58"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label for="inputRw">width (rw):</label>
+        <input
+          type="number"
+          id="inputRw"
+          value="0.30"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label for="inputRh">height (rh):</label>
+        <input
+          type="number"
+          id="inputRh"
+          value="0.08"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+      </div>
+    </div>
+
+    <div id="status" class="hint">
+      อัปโหลดรูปสลิปหลายไฟล์ แล้วลากกรอบสีบนรูปเพื่อเลือกพื้นที่ (พื้นที่ที่จะ
+      OCR)
+    </div>
+
+    <div id="cards" class="grid"></div>
+
+    <div class="results" id="resultsPanel" style="display: none">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <div>
+          <strong>สรุปผล</strong>
+          <div class="small">
+            สลิปทั้งหมด: <span id="totalCount">0</span> ใบ
+          </div>
+        </div>
+        <div style="text-align: right">
+          <div class="small">ยอดรวม</div>
+          <div style="font-size: 20px; font-weight: 700">
+            ฿ <span id="grandTotal">0.00</span>
+          </div>
+        </div>
+      </div>
+      <div class="list" id="perSlipList"></div>
+    </div>
+
+    <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    <script>
+      // --- JS เหมือนของเดิม ยกเว้น canvas ใช้ style.width=100% และ height auto ---
+      const input = document.getElementById("inputFiles");
+      const cards = document.getElementById("cards");
+      const btnScanAll = document.getElementById("btnScanAll");
+      const btnSuggested = document.getElementById("btnSuggested");
+      const btnClear = document.getElementById("btnClear");
+      const inputRx = document.getElementById("inputRx");
+      const inputRy = document.getElementById("inputRy");
+      const inputRw = document.getElementById("inputRw");
+      const inputRh = document.getElementById("inputRh");
+
+      let slips = [];
+
+      input.addEventListener("change", async (e) => {
+        const bank = document.getElementById("bankSelect").value;
+        if (!bank) {
+          alert("กรุณาเลือกธนาคารก่อนอัปโหลดรูปสลิป");
+          input.value = "";
+          return;
+        }
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        slips = [];
+        cards.innerHTML = "";
+        document.getElementById("resultsPanel").style.display = "none";
+
+        for (const f of files) {
+          const url = URL.createObjectURL(f);
+          const img = new Image();
+          img.src = url;
+          await img.decode().catch(() => {});
+          createCardForImage(f, img);
+        }
+      });
+
+      function createCardForImage(file, img) {
+        const card = document.createElement("div");
+        card.className = "card";
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.style.width = "100%";
+        canvas.style.height = "auto";
+
+        const wrapper = document.createElement("div");
+        wrapper.style.position = "relative";
+        wrapper.appendChild(canvas);
+        const overlay = document.createElement("div");
+        overlay.style.position = "absolute";
+        overlay.style.left = 0;
+        overlay.style.top = 0;
+        overlay.style.right = 0;
+        overlay.style.bottom = 0;
+        overlay.style.pointerEvents = "none";
+        wrapper.appendChild(overlay);
+
+        card.appendChild(wrapper);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.innerHTML = `
+  <div class="small">
+    <strong class="meta-file-name" title="${file.name}">${file.name}</strong>
+    <div class="small">ขนาด: ${canvas.width}×${canvas.height}</div>
+  </div>`;
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const btnUseSuggested = document.createElement("button");
+
+        btnUseSuggested.textContent = "ตำแหน่งแนะนำ";
+        const btnOCR = document.createElement("button");
+        btnOCR.textContent = "OCR ใบนี้";
+        const btnResetRect = document.createElement("button");
+        btnResetRect.textContent = "ล้างกรอบ";
+        actions.appendChild(btnUseSuggested);
+        actions.appendChild(btnOCR);
+        actions.appendChild(btnResetRect);
+        meta.appendChild(actions);
+        card.appendChild(meta);
+
+        const info = document.createElement("div");
+        info.className = "small";
+        info.style.marginTop = "8px";
+        info.innerHTML = `กรอบที่เลือก: <span class="small" id="rectInfo">ยังไม่เลือก</span>`;
+        card.appendChild(info);
+
+        const out = document.createElement("div");
+        out.className = "small";
+        out.style.marginTop = "8px";
+        out.innerHTML = `ผล OCR: <span id="ocrText">-</span>`;
+        card.appendChild(out);
+
+        cards.appendChild(card);
+
+        const slip = {
+          file,
+          img,
+          canvas,
+          ctx,
+          selRect: null,
+          ocrText: null,
+          number: null,
+          elements: {
+            card,
+            overlay,
+            rectInfo: info.querySelector("#rectInfo"),
+            ocrTextElem: out.querySelector("#ocrText"),
+            btnOCR,
+            btnUseSuggested,
+            btnResetRect,
+          },
+        };
+        slips.push(slip);
+
+        enableRectSelection(wrapper, canvas, slip);
+
+        slip.elements.btnUseSuggested.addEventListener("click", () => {
+          const rx = parseFloat(inputRx.value);
+          const ry = parseFloat(inputRy.value);
+          const rw = parseFloat(inputRw.value);
+          const rh = parseFloat(inputRh.value);
+          const x = Math.round(rx * canvas.width);
+          const y = Math.round(ry * canvas.height);
+          const w = Math.round(rw * canvas.width);
+          const h = Math.round(rh * canvas.height);
+          slip.selRect = { x, y, w, h };
+          redrawCanvasWithRect(slip);
+          slip.elements.rectInfo.textContent = `x:${x} y:${y} w:${w} h:${h}`;
+        });
+
+        slip.elements.btnResetRect.addEventListener("click", () => {
+          slip.selRect = null;
+          slip.elements.rectInfo.textContent = "ยังไม่เลือก";
+          redrawCanvasWithRect(slip);
+          slip.elements.ocrTextElem.textContent = "-";
+          slip.ocrText = null;
+          slip.number = null;
+        });
+
+        slip.elements.btnOCR.addEventListener("click", async () => {
+          await processSlipOCR(slip);
+          refreshSummary();
+        });
+
+        redrawCanvasWithRect(slip);
+      }
+
+      function enableRectSelection(wrapper, canvas, slip) {
+        const overlayCanvas = document.createElement("canvas");
+        overlayCanvas.style.position = "absolute";
+        overlayCanvas.style.left = "0";
+        overlayCanvas.style.top = "0";
+        overlayCanvas.style.width = "100%";
+        overlayCanvas.style.height = "100%";
+        overlayCanvas.width = canvas.width;
+        overlayCanvas.height = canvas.height;
+        overlayCanvas.style.pointerEvents = "auto";
+        overlayCanvas
+          .getContext("2d")
+          .clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        slip.overlayCanvas = overlayCanvas;
+        slip.overlay = wrapper.querySelector("div");
+        slip.overlay.appendChild(overlayCanvas);
+
+        let dragging = false,
+          startX = 0,
+          startY = 0;
+        function clientToCanvasCoords(evt) {
+          const rect = overlayCanvas.getBoundingClientRect();
+          const scaleX = overlayCanvas.width / rect.width;
+          const scaleY = overlayCanvas.height / rect.height;
+          const cx = (evt.clientX - rect.left) * scaleX;
+          const cy = (evt.clientY - rect.top) * scaleY;
+          return {
+            x: Math.max(0, Math.min(overlayCanvas.width, cx)),
+            y: Math.max(0, Math.min(overlayCanvas.height, cy)),
+          };
+        }
+        overlayCanvas.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          dragging = true;
+          const p = clientToCanvasCoords(e);
+          startX = p.x;
+          startY = p.y;
+        });
+        overlayCanvas.addEventListener("pointermove", (e) => {
+          if (!dragging) return;
+          const p = clientToCanvasCoords(e);
+          const x = Math.min(startX, p.x),
+            y = Math.min(startY, p.y);
+          const w = Math.abs(p.x - startX),
+            h = Math.abs(p.y - startY);
+          slip.selRect = {
+            x: Math.round(x),
+            y: Math.round(y),
+            w: Math.round(w),
+            h: Math.round(h),
+          };
+          drawOverlayRect(overlayCanvas, slip.selRect);
+          slip.elements.rectInfo.textContent = `x:${slip.selRect.x} y:${slip.selRect.y} w:${slip.selRect.w} h:${slip.selRect.h}`;
+        });
+        window.addEventListener("pointerup", (e) => {
+          if (!dragging) return;
+          dragging = false;
+          redrawCanvasWithRect(slip);
+        });
+      }
+
+      function drawOverlayRect(ovCanvas, rect) {
+        const ctx = ovCanvas.getContext("2d");
+        ctx.clearRect(0, 0, ovCanvas.width, ovCanvas.height);
+        if (!rect) return;
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(0, 0, ovCanvas.width, ovCanvas.height);
+        ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = Math.max(
+          2,
+          Math.round(Math.min(ovCanvas.width, ovCanvas.height) / 300)
+        );
+        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+      }
+
+      function redrawCanvasWithRect(slip) {
+        const { canvas, ctx, selRect, img, overlayCanvas } = slip;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (overlayCanvas) {
+          overlayCanvas.width = canvas.width;
+          overlayCanvas.height = canvas.height;
+          drawOverlayRect(overlayCanvas, selRect);
+        }
+      }
+
+      async function processSlipOCR(slip) {
+        if (!slip.selRect) {
+          alert(
+            "ยังไม่ได้เลือกกรอบสำหรับสแกนในสลิปนี้ — กรุณาลากกรอบหรือใช้ตำแหน่งแนะนำ"
+          );
+          return;
+        }
+        const c = document.createElement("canvas");
+        c.width = slip.selRect.w;
+        c.height = slip.selRect.h;
+        const cx = c.getContext("2d");
+        cx.drawImage(
+          slip.canvas,
+          slip.selRect.x,
+          slip.selRect.y,
+          slip.selRect.w,
+          slip.selRect.h,
+          0,
+          0,
+          c.width,
+          c.height
+        );
+
+        slip.elements.ocrTextElem.textContent = "กำลังอ่าน...";
+        try {
+          const {
+            data: { text },
+          } = await Tesseract.recognize(c, "eng+tha", {
+            logger: (m) => {},
+          });
+          slip.ocrText = text;
+          slip.elements.ocrTextElem.textContent = text.replace(/\n/g, " / ");
+          const nums = (text.match(/[\d,.]+(?:\.\d+)?/g) || [])
+            .map((s) => {
+              const normalized = s.replace(/,/g, "");
+              const asNum = parseFloat(normalized);
+              return isFinite(asNum) ? asNum : null;
+            })
+            .filter((v) => v !== null);
+          let chosen = null;
+          if (nums.length === 1) chosen = nums[0];
+          else if (nums.length > 1) chosen = Math.max(...nums);
+          if (chosen === null) {
+            const alt = (text.match(/\d+/g) || [])
+              .map((s) => parseFloat(s))
+              .filter((v) => isFinite(v));
+            if (alt.length) chosen = Math.max(...alt);
+          }
+          slip.number = chosen !== null ? chosen : null;
+          slip.elements.ocrTextElem.textContent =
+            slip.ocrText +
+            (slip.number !== null
+              ? ` → ตัวเลข: ${slip.number}`
+              : " → ไม่พบตัวเลข");
+        } catch (err) {
+          console.error(err);
+          slip.elements.ocrTextElem.textContent = "เกิดข้อผิดพลาดขณะ OCR";
+          slip.ocrText = null;
+          slip.number = null;
+        }
+      }
+
+      btnScanAll.addEventListener("click", async () => {
+        const bank = document.getElementById("bankSelect").value;
+        if (!bank) {
+          alert("กรุณาเลือกธนาคารก่อนสแกน");
+          return;
+        }
+        if (!slips.length) return alert("ยังไม่มีรูปสลิป");
+
+        for (const s of slips) {
+          if (!s.selRect) {
+            const canvas = s.canvas;
+            const rx = parseFloat(inputRx.value);
+            const ry = parseFloat(inputRy.value);
+            const rw = parseFloat(inputRw.value);
+            const rh = parseFloat(inputRh.value);
+            s.selRect = {
+              x: Math.round(rx * canvas.width),
+              y: Math.round(ry * canvas.height),
+              w: Math.round(rw * canvas.width),
+              h: Math.round(rh * canvas.height),
+            };
+            redrawCanvasWithRect(s);
+            s.elements.rectInfo.textContent = `(แนะนำ) x:${s.selRect.x} y:${s.selRect.y} w:${s.selRect.w} h:${s.selRect.h}`;
+          }
+          await processSlipOCR(s);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        refreshSummary();
+      });
+
+      btnClear.addEventListener("click", () => {
+        slips = [];
+        cards.innerHTML = "";
+        input.value = "";
+        document.getElementById("resultsPanel").style.display = "none";
+        document.getElementById("status").textContent =
+          "เริ่มใหม่ — อัปโหลดรูปสลิปหลายไฟล์ แล้วลากกรอบสีบนรูปเพื่อเลือกพื้นที่ (พื้นที่ที่จะ OCR)";
+      });
+
+      function refreshSummary() {
+        const resultsPanel = document.getElementById("resultsPanel");
+        const totalCountElem = document.getElementById("totalCount");
+        const grandTotalElem = document.getElementById("grandTotal");
+        const perSlipList = document.getElementById("perSlipList");
+
+        const count = slips.length;
+        totalCountElem.textContent = count;
+        let grand = 0;
+        perSlipList.innerHTML = "";
+
+        slips.forEach((s, idx) => {
+          const val = s.number != null && !isNaN(s.number) ? s.number : null;
+          if (val != null) grand += val;
+          const row = document.createElement("div");
+          row.className = "row";
+          const left = document.createElement("div");
+          left.innerHTML = `<strong>ใบ ${idx + 1}</strong><div class="small">${
+            s.file.name
+          }</div>`;
+          const right = document.createElement("div");
+          right.style.textAlign = "right";
+          right.innerHTML = `<div class="small">OCR: ${
+            s.ocrText ? s.ocrText.replace(/\n/g, " / ") : "-"
+          }</div>
+                       <div style="font-weight:700; margin-top:6px;">฿ ${
+                         val != null ? Number(val).toFixed(2) : "-"
+                       }</div>`;
+          row.appendChild(left);
+          row.appendChild(right);
+          perSlipList.appendChild(row);
+        });
+
+        grandTotalElem.textContent = grand.toFixed(2);
+        resultsPanel.style.display = "block";
+      }
+    </script>
+    <script>
+      // --- เพิ่ม JS ด้านล่างการประกาศตัวแปร inputRx ... inputRh ---
+      document.getElementById("bankSelect").addEventListener("change", (e) => {
+        const v = e.target.value;
+        const map = {
+          SCB: { rx: 0.67, ry: 0.61, rw: 0.3, rh: 0.06 },
+          Krungthai: { rx: 0.55, ry: 0.75, rw: 0.35, rh: 0.07 },
+          Bangkok: { rx: 0.21, ry: 0.32, rw: 0.4, rh: 0.06 },
+          TTB: { rx: 0.21, ry: 0.35, rw: 0.4, rh: 0.06 },
+        };
+        if (map[v]) {
+          inputRx.value = map[v].rx;
+          inputRy.value = map[v].ry;
+          inputRw.value = map[v].rw;
+          inputRh.value = map[v].rh;
+        }
+      });
+      let dragEnabled = false; // เริ่มต้นปิดการลาก
+
+      const toggleDragBtn = document.getElementById("toggleDrag");
+      toggleDragBtn.textContent = dragEnabled
+        ? "ปิดการกำหนดตำเเหน่ง"
+        : "เปิดการกำหนดตำเเหน่ง";
+
+      toggleDragBtn.addEventListener("click", () => {
+        dragEnabled = !dragEnabled;
+        toggleDragBtn.textContent = dragEnabled
+          ? "ปิดการกำหนดตำเเหน่ง"
+          : "เปิดการกำหนดตำเเหน่ง";
+      });
+
+      // ปรับ enableRectSelection
+      function enableRectSelection(wrapper, canvas, slip) {
+        const overlayCanvas = document.createElement("canvas");
+        overlayCanvas.style.position = "absolute";
+        overlayCanvas.style.left = "0";
+        overlayCanvas.style.top = "0";
+        overlayCanvas.style.width = "100%";
+        overlayCanvas.style.height = "100%";
+        overlayCanvas.width = canvas.width;
+        overlayCanvas.height = canvas.height;
+        overlayCanvas.style.pointerEvents = "auto";
+        overlayCanvas
+          .getContext("2d")
+          .clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        slip.overlayCanvas = overlayCanvas;
+        slip.overlay = wrapper.querySelector("div");
+        slip.overlay.appendChild(overlayCanvas);
+
+        let dragging = false,
+          startX = 0,
+          startY = 0;
+
+        function clientToCanvasCoords(evt) {
+          const rect = overlayCanvas.getBoundingClientRect();
+          const scaleX = overlayCanvas.width / rect.width;
+          const scaleY = overlayCanvas.height / rect.height;
+          const cx = (evt.clientX - rect.left) * scaleX;
+          const cy = (evt.clientY - rect.top) * scaleY;
+          return {
+            x: Math.max(0, Math.min(overlayCanvas.width, cx)),
+            y: Math.max(0, Math.min(overlayCanvas.height, cy)),
+          };
+        }
+
+        overlayCanvas.addEventListener("pointerdown", (e) => {
+          if (!dragEnabled) return; // ปิดการลาก
+          e.preventDefault();
+          dragging = true;
+          const p = clientToCanvasCoords(e);
+          startX = p.x;
+          startY = p.y;
+        });
+
+        overlayCanvas.addEventListener("pointermove", (e) => {
+          if (!dragEnabled || !dragging) return;
+          const p = clientToCanvasCoords(e);
+          const x = Math.min(startX, p.x),
+            y = Math.min(startY, p.y);
+          const w = Math.abs(p.x - startX),
+            h = Math.abs(p.y - startY);
+          slip.selRect = {
+            x: Math.round(x),
+            y: Math.round(y),
+            w: Math.round(w),
+            h: Math.round(h),
+          };
+          drawOverlayRect(overlayCanvas, slip.selRect);
+          slip.elements.rectInfo.textContent = `x:${slip.selRect.x} y:${slip.selRect.y} w:${slip.selRect.w} h:${slip.selRect.h}`;
+        });
+
+        window.addEventListener("pointerup", () => {
+          if (!dragEnabled || !dragging) return;
+          dragging = false;
+          redrawCanvasWithRect(slip);
+        });
+      }
+    </script>
+  </body>
+</html>
