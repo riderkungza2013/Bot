@@ -71,6 +71,16 @@
         color: white;
         border-color: transparent;
       }
+      button.primary-2 {
+        background: #0cf051;
+        color: white;
+        border-color: transparent;
+      }
+      button.primary-3 {
+        background: #e90202;
+        color: white;
+        border-color: transparent;
+      }
 
       /* ===== ส่วนการ์ดและผลลัพธ์เดิม ===== */
       .grid {
@@ -153,8 +163,8 @@
         <input id="inputFiles" type="file" accept="image/*" multiple />
         <button id="btnSuggested">ใช้ตำแหน่งแนะนำ (กำหนดเอง)</button>
         <button id="btnScanAll" class="primary">สแกนทั้งหมด (OCR)</button>
-        <button id="btnClear">เริ่มใหม่</button>
-        <button id="toggleDrag">ปิดการลาก</button>
+        <button id="btnClear" class="primary-2">เริ่มใหม่</button>
+        <button id="toggleDrag" class="primary-3">ปิดการลาก</button>
       </div>
 
       <div class="input-group">
@@ -165,9 +175,11 @@
           <option value="Krungthai">Krungthai</option>
           <option value="Bangkok">Bangkok</option>
           <option value="TTB">TTB</option>
+          <option value="KPLUS">KPLUS</option>
         </select>
 
-        <label for="inputRx">x-start (rx):</label>
+        <!-- กรอบตัวเลข -->
+        <label>x-start (rx):</label>
         <input
           type="number"
           id="inputRx"
@@ -176,7 +188,7 @@
           min="0"
           max="1"
         />
-        <label for="inputRy">y-start (ry):</label>
+        <label>y-start (ry):</label>
         <input
           type="number"
           id="inputRy"
@@ -185,19 +197,57 @@
           min="0"
           max="1"
         />
-        <label for="inputRw">width (rw):</label>
+        <label>width (rw):</label>
         <input
           type="number"
           id="inputRw"
-          value="0.30"
+          value="0.3"
           step="0.01"
           min="0"
           max="1"
         />
-        <label for="inputRh">height (rh):</label>
+        <label>height (rh):</label>
         <input
           type="number"
           id="inputRh"
+          value="0.08"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+
+        <!-- กรอบชื่อผู้โอน -->
+        <label>x-start ชื่อผู้โอน:</label>
+        <input
+          type="number"
+          id="inputRxName"
+          value="0.54"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label>y-start ชื่อผู้โอน:</label>
+        <input
+          type="number"
+          id="inputRyName"
+          value="0.32"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label>width ชื่อผู้โอน:</label>
+        <input
+          type="number"
+          id="inputRwName"
+          value="0.45"
+          step="0.01"
+          min="0"
+          max="1"
+        />
+        <label>height ชื่อผู้โอน:</label>
+        <input
+          type="number"
+          id="inputRhName"
           value="0.08"
           step="0.01"
           min="0"
@@ -302,10 +352,10 @@
         const meta = document.createElement("div");
         meta.className = "meta";
         meta.innerHTML = `
-  <div class="small">
-    <strong class="meta-file-name" title="${file.name}">${file.name}</strong>
-    <div class="small">ขนาด: ${canvas.width}×${canvas.height}</div>
-  </div>`;
+        <div class="small">
+          <strong class="meta-file-name" title="${file.name}">${file.name}</strong>
+          <div class="small">ขนาด: ${canvas.width}×${canvas.height}</div>
+        </div>`;
 
         const actions = document.createElement("div");
         actions.className = "actions";
@@ -321,6 +371,12 @@
         actions.appendChild(btnResetRect);
         meta.appendChild(actions);
         card.appendChild(meta);
+
+        const outName = document.createElement("div");
+        outName.className = "small";
+        outName.style.marginTop = "8px";
+        outName.innerHTML = `ชื่อผู้โอน: <span id="ocrNameText">-</span>`;
+        card.appendChild(outName);
 
         const info = document.createElement("div");
         info.className = "small";
@@ -341,14 +397,17 @@
           img,
           canvas,
           ctx,
-          selRect: null,
+          selRect: null, // กรอบตัวเลขสีแดง
+          selRectName: null, // กรอบชื่อผู้โอนสีฟ้า
           ocrText: null,
+          ocrName: null,
           number: null,
           elements: {
             card,
             overlay,
             rectInfo: info.querySelector("#rectInfo"),
             ocrTextElem: out.querySelector("#ocrText"),
+            ocrNameElem: outName.querySelector("#ocrNameText"),
             btnOCR,
             btnUseSuggested,
             btnResetRect,
@@ -358,18 +417,31 @@
 
         enableRectSelection(wrapper, canvas, slip);
 
+        // ปุ่มใช้ตำแหน่งแนะนำ กรอบเลข + ชื่อ
         slip.elements.btnUseSuggested.addEventListener("click", () => {
           const rx = parseFloat(inputRx.value);
           const ry = parseFloat(inputRy.value);
           const rw = parseFloat(inputRw.value);
           const rh = parseFloat(inputRh.value);
-          const x = Math.round(rx * canvas.width);
-          const y = Math.round(ry * canvas.height);
-          const w = Math.round(rw * canvas.width);
-          const h = Math.round(rh * canvas.height);
-          slip.selRect = { x, y, w, h };
+          slip.selRect = {
+            x: Math.round(rx * slip.canvas.width),
+            y: Math.round(ry * slip.canvas.height),
+            w: Math.round(rw * slip.canvas.width),
+            h: Math.round(rh * slip.canvas.height),
+          };
+
+          const rxn = parseFloat(inputRxName.value);
+          const ryn = parseFloat(inputRyName.value);
+          const rwn = parseFloat(inputRwName.value);
+          const rhn = parseFloat(inputRhName.value);
+          slip.selRectName = {
+            x: Math.round(rxn * slip.canvas.width),
+            y: Math.round(ryn * slip.canvas.height),
+            w: Math.round(rwn * slip.canvas.width),
+            h: Math.round(rhn * slip.canvas.height),
+          };
+
           redrawCanvasWithRect(slip);
-          slip.elements.rectInfo.textContent = `x:${x} y:${y} w:${w} h:${h}`;
         });
 
         slip.elements.btnResetRect.addEventListener("click", () => {
@@ -465,77 +537,120 @@
         ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
       }
 
+      // ปรับ redrawCanvasWithRect ให้วาดทั้งสองกรอบ
       function redrawCanvasWithRect(slip) {
-        const { canvas, ctx, selRect, img, overlayCanvas } = slip;
+        const { canvas, ctx, selRect, selRectName, img, overlayCanvas } = slip;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         if (overlayCanvas) {
           overlayCanvas.width = canvas.width;
           overlayCanvas.height = canvas.height;
-          drawOverlayRect(overlayCanvas, selRect);
+          // กรอบตัวเลขสีแดง
+          drawOverlayRect(overlayCanvas, selRect, "red");
+          // กรอบชื่อผู้โอนสีฟ้า
+          drawOverlayRect(overlayCanvas, selRectName, "blue");
         }
       }
 
+      function drawOverlayRect(ovCanvas, rect, color = "red") {
+        const ctx = ovCanvas.getContext("2d");
+        if (!rect) return;
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fillRect(0, 0, ovCanvas.width, ovCanvas.height);
+        ctx.clearRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(
+          2,
+          Math.round(Math.min(ovCanvas.width, ovCanvas.height) / 300)
+        );
+        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+      }
+
+      // processSlipOCR สแกนทั้งสองกรอบพร้อมกัน
       async function processSlipOCR(slip) {
-        if (!slip.selRect) {
-          alert(
-            "ยังไม่ได้เลือกกรอบสำหรับสแกนในสลิปนี้ — กรุณาลากกรอบหรือใช้ตำแหน่งแนะนำ"
-          );
+        if (!slip.selRect && !slip.selRectName) {
+          alert("ยังไม่ได้เลือกกรอบสำหรับสแกนในสลิปนี้");
           return;
         }
-        const c = document.createElement("canvas");
-        c.width = slip.selRect.w;
-        c.height = slip.selRect.h;
-        const cx = c.getContext("2d");
-        cx.drawImage(
-          slip.canvas,
-          slip.selRect.x,
-          slip.selRect.y,
-          slip.selRect.w,
-          slip.selRect.h,
-          0,
-          0,
-          c.width,
-          c.height
-        );
 
-        slip.elements.ocrTextElem.textContent = "กำลังอ่าน...";
-        try {
-          const {
-            data: { text },
-          } = await Tesseract.recognize(c, "eng+tha", {
-            logger: (m) => {},
-          });
-          slip.ocrText = text;
-          slip.elements.ocrTextElem.textContent = text.replace(/\n/g, " / ");
-          const nums = (text.match(/[\d,.]+(?:\.\d+)?/g) || [])
-            .map((s) => {
-              const normalized = s.replace(/,/g, "");
-              const asNum = parseFloat(normalized);
-              return isFinite(asNum) ? asNum : null;
-            })
-            .filter((v) => v !== null);
-          let chosen = null;
-          if (nums.length === 1) chosen = nums[0];
-          else if (nums.length > 1) chosen = Math.max(...nums);
-          if (chosen === null) {
-            const alt = (text.match(/\d+/g) || [])
-              .map((s) => parseFloat(s))
+        // --- OCR ตัวเลข ---
+        // --- OCR ตัวเลข ---
+        if (slip.selRect) {
+          const cNum = document.createElement("canvas");
+          cNum.width = slip.selRect.w;
+          cNum.height = slip.selRect.h;
+          const cx = cNum.getContext("2d");
+          cx.drawImage(
+            slip.canvas,
+            slip.selRect.x,
+            slip.selRect.y,
+            slip.selRect.w,
+            slip.selRect.h,
+            0,
+            0,
+            cNum.width,
+            cNum.height
+          );
+          slip.elements.ocrTextElem.textContent = "กำลังอ่านตัวเลข...";
+          try {
+            const {
+              data: { text },
+            } = await Tesseract.recognize(cNum, "eng+tha");
+            slip.ocrText = text;
+
+            // แปลงตัวเลข
+            const nums = (text.match(/[\d,.]+(?:\.\d+)?/g) || [])
+              .map((s) => parseFloat(s.replace(/,/g, "")))
               .filter((v) => isFinite(v));
-            if (alt.length) chosen = Math.max(...alt);
+
+            if (nums.length) {
+              // ใช้ max ของตัวเลข แล้วปัดเป็นทศนิยม 2 หลัก
+              slip.number = parseFloat(Math.max(...nums).toFixed(2));
+            } else {
+              slip.number = null;
+            }
+          } catch {
+            slip.ocrText = null;
+            slip.number = null;
           }
-          slip.number = chosen !== null ? chosen : null;
-          slip.elements.ocrTextElem.textContent =
-            slip.ocrText +
-            (slip.number !== null
-              ? ` → ตัวเลข: ${slip.number}`
-              : " → ไม่พบตัวเลข");
-        } catch (err) {
-          console.error(err);
-          slip.elements.ocrTextElem.textContent = "เกิดข้อผิดพลาดขณะ OCR";
-          slip.ocrText = null;
-          slip.number = null;
         }
+
+        // --- OCR ชื่อผู้โอน ---
+        if (slip.selRectName) {
+          const cName = document.createElement("canvas");
+          cName.width = slip.selRectName.w;
+          cName.height = slip.selRectName.h;
+          const cx = cName.getContext("2d");
+          cx.drawImage(
+            slip.canvas,
+            slip.selRectName.x,
+            slip.selRectName.y,
+            slip.selRectName.w,
+            slip.selRectName.h,
+            0,
+            0,
+            cName.width,
+            cName.height
+          );
+          slip.elements.ocrNameElem.textContent = "กำลังอ่านชื่อ...";
+          try {
+            const {
+              data: { text },
+            } = await Tesseract.recognize(cName, "eng+tha");
+            slip.ocrName = text.replace(/\n/g, " ").trim();
+          } catch {
+            slip.ocrName = null;
+          }
+        }
+
+        // --- แสดงผลรวมใน card ---
+        slip.elements.ocrTextElem.textContent =
+          slip.ocrText +
+          (slip.number !== null
+            ? ` → ตัวเลข: ${slip.number}`
+            : " → ไม่พบตัวเลข");
+
+        slip.elements.ocrNameElem.textContent = slip.ocrName || "-";
       }
 
       btnScanAll.addEventListener("click", async () => {
@@ -547,24 +662,84 @@
         if (!slips.length) return alert("ยังไม่มีรูปสลิป");
 
         for (const s of slips) {
-          if (!s.selRect) {
-            const canvas = s.canvas;
-            const rx = parseFloat(inputRx.value);
-            const ry = parseFloat(inputRy.value);
-            const rw = parseFloat(inputRw.value);
-            const rh = parseFloat(inputRh.value);
-            s.selRect = {
-              x: Math.round(rx * canvas.width),
-              y: Math.round(ry * canvas.height),
-              w: Math.round(rw * canvas.width),
-              h: Math.round(rh * canvas.height),
-            };
-            redrawCanvasWithRect(s);
-            s.elements.rectInfo.textContent = `(แนะนำ) x:${s.selRect.x} y:${s.selRect.y} w:${s.selRect.w} h:${s.selRect.h}`;
+          // เช็คธนาคาร Bangkok
+          if (bank === "Bangkok") {
+            if (s.canvas.width === 622 && s.canvas.height === 1280) {
+              s.selRect = {
+                x: Math.round(0.21 * s.canvas.width),
+                y: Math.round(0.32 * s.canvas.height),
+                w: Math.round(0.4 * s.canvas.width),
+                h: Math.round(0.06 * s.canvas.height),
+              };
+              s.selRectName = {
+                x: Math.round(0.42 * s.canvas.width),
+                y: Math.round(0.43 * s.canvas.height),
+                w: Math.round(0.45 * s.canvas.width),
+                h: Math.round(0.04 * s.canvas.height),
+              };
+            } else if (s.canvas.width === 522 && s.canvas.height === 1280) {
+              s.selRect = {
+                x: Math.round(0.12 * s.canvas.width),
+                y: Math.round(0.41 * s.canvas.height),
+                w: Math.round(0.5 * s.canvas.width),
+                h: Math.round(0.06 * s.canvas.height),
+              };
+              s.selRectName = {
+                x: Math.round(0.42 * s.canvas.width),
+                y: Math.round(0.52 * s.canvas.height),
+                w: Math.round(0.45 * s.canvas.width),
+                h: Math.round(0.04 * s.canvas.height),
+              };
+            } else {
+              // ขนาดอื่น ๆ ใช้ค่า default ของ Bangkok
+              s.selRect = {
+                x: Math.round(0.21 * s.canvas.width),
+                y: Math.round(0.32 * s.canvas.height),
+                w: Math.round(0.4 * s.canvas.width),
+                h: Math.round(0.06 * s.canvas.height),
+              };
+              s.selRectName = {
+                x: Math.round(0.42 * s.canvas.width),
+                y: Math.round(0.43 * s.canvas.height),
+                w: Math.round(0.45 * s.canvas.width),
+                h: Math.round(0.04 * s.canvas.height),
+              };
+            }
+          } else {
+            // สำหรับธนาคารอื่น ๆ ใช้ตำแหน่งที่ตั้งไว้ (inputRx...) ถ้ายังไม่เลือก
+            if (!s.selRect) {
+              const rx = parseFloat(inputRx.value);
+              const ry = parseFloat(inputRy.value);
+              const rw = parseFloat(inputRw.value);
+              const rh = parseFloat(inputRh.value);
+              s.selRect = {
+                x: Math.round(rx * s.canvas.width),
+                y: Math.round(ry * s.canvas.height),
+                w: Math.round(rw * s.canvas.width),
+                h: Math.round(rh * s.canvas.height),
+              };
+            }
+            if (!s.selRectName) {
+              const rx = parseFloat(inputRxName.value);
+              const ry = parseFloat(inputRyName.value);
+              const rw = parseFloat(inputRwName.value);
+              const rh = parseFloat(inputRhName.value);
+              s.selRectName = {
+                x: Math.round(rx * s.canvas.width),
+                y: Math.round(ry * s.canvas.height),
+                w: Math.round(rw * s.canvas.width),
+                h: Math.round(rh * s.canvas.height),
+              };
+            }
           }
+
+          redrawCanvasWithRect(s);
+          s.elements.rectInfo.textContent = `(แนะนำ) x:${s.selRect.x} y:${s.selRect.y} w:${s.selRect.w} h:${s.selRect.h}`;
+
           await processSlipOCR(s);
           await new Promise((r) => setTimeout(r, 300));
         }
+
         refreshSummary();
       });
 
@@ -591,20 +766,28 @@
         slips.forEach((s, idx) => {
           const val = s.number != null && !isNaN(s.number) ? s.number : null;
           if (val != null) grand += val;
+
           const row = document.createElement("div");
           row.className = "row";
+
           const left = document.createElement("div");
-          left.innerHTML = `<strong>ใบ ${idx + 1}</strong><div class="small">${
-            s.file.name
-          }</div>`;
+          left.innerHTML = `
+            <strong>ใบ ${idx + 1}</strong>
+            <div class="small">${s.file.name}</div>
+          `;
+
           const right = document.createElement("div");
           right.style.textAlign = "right";
-          right.innerHTML = `<div class="small">OCR: ${
-            s.ocrText ? s.ocrText.replace(/\n/g, " / ") : "-"
-          }</div>
-                       <div style="font-weight:700; margin-top:6px;">฿ ${
-                         val != null ? Number(val).toFixed(2) : "-"
-                       }</div>`;
+          right.innerHTML = `
+            <div class="small">OCR: ${
+              s.ocrText ? s.ocrText.replace(/\n/g, " / ") : "-"
+            }</div>
+            <div class="small">ชื่อผู้โอน: ${s.ocrName || "-"}</div>
+            <div style="font-weight:700; margin-top:6px;">฿ ${
+              val != null ? Number(val).toFixed(2) : "-"
+            }</div>
+          `;
+
           row.appendChild(left);
           row.appendChild(right);
           perSlipList.appendChild(row);
@@ -617,20 +800,68 @@
     <script>
       // --- เพิ่ม JS ด้านล่างการประกาศตัวแปร inputRx ... inputRh ---
       document.getElementById("bankSelect").addEventListener("change", (e) => {
-        const v = e.target.value;
+        const bank = e.target.value;
+
+        // ฟังก์ชันช่วยเลือกค่า default
+        function setValues(number, name) {
+          inputRx.value = number.rx;
+          inputRy.value = number.ry;
+          inputRw.value = number.rw;
+          inputRh.value = number.rh;
+
+          inputRxName.value = name.rx;
+          inputRyName.value = name.ry;
+          inputRwName.value = name.rw;
+          inputRhName.value = name.rh;
+        }
+
         const map = {
-          SCB: { rx: 0.67, ry: 0.61, rw: 0.3, rh: 0.06 },
-          Krungthai: { rx: 0.55, ry: 0.75, rw: 0.35, rh: 0.07 },
-          Bangkok: { rx: 0.21, ry: 0.32, rw: 0.4, rh: 0.06 },
-          TTB: { rx: 0.21, ry: 0.35, rw: 0.4, rh: 0.06 },
+          SCB: {
+            number: { rx: 0.65, ry: 0.58, rw: 0.3, rh: 0.08 },
+            name: { rx: 0.54, ry: 0.32, rw: 0.45, rh: 0.08 },
+          },
+          Krungthai: {
+            number: { rx: 0.55, ry: 0.75, rw: 0.35, rh: 0.07 },
+            name: { rx: 0.15, ry: 0.36, rw: 0.45, rh: 0.06 },
+          },
+          TTB: {
+            number: { rx: 0.21, ry: 0.35, rw: 0.4, rh: 0.06 },
+            name: { rx: 0.18, ry: 0.46, rw: 0.45, rh: 0.04 },
+          },
+          KPLUS: {
+            number: { rx: 0.3, ry: 0.78, rw: 0.3, rh: 0.06 },
+            name: { rx: 0.2, ry: 0.16, rw: 0.4, rh: 0.08 },
+          },
         };
-        if (map[v]) {
-          inputRx.value = map[v].rx;
-          inputRy.value = map[v].ry;
-          inputRw.value = map[v].rw;
-          inputRh.value = map[v].rh;
+
+        if (bank === "Bangkok") {
+          // ตรวจสอบว่ามีสลิปแล้ว และเลือกใบแรกเพื่อตรวจขนาด
+          if (slips.length > 0) {
+            const w = slips[0].canvas.width;
+            const h = slips[0].canvas.height;
+            if (w === 622 && h === 1280) {
+              setValues(
+                { rx: 0.21, ry: 0.32, rw: 0.4, rh: 0.06 },
+                { rx: 0.42, ry: 0.43, rw: 0.45, rh: 0.04 }
+              );
+            } else if (w === 522 && h === 1280) {
+              setValues(
+                { rx: 0.12, ry: 0.41, rw: 0.5, rh: 0.06 },
+                { rx: 0.42, ry: 0.52, rw: 0.45, rh: 0.04 }
+              );
+            } else {
+              // default
+              setValues(
+                { rx: 0.21, ry: 0.32, rw: 0.4, rh: 0.06 },
+                { rx: 0.42, ry: 0.43, rw: 0.45, rh: 0.04 }
+              );
+            }
+          }
+        } else if (map[bank]) {
+          setValues(map[bank].number, map[bank].name);
         }
       });
+
       let dragEnabled = false; // เริ่มต้นปิดการลาก
 
       const toggleDragBtn = document.getElementById("toggleDrag");
